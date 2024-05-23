@@ -1,0 +1,134 @@
+# Azure DevOps Pipeline Configuration for Databricks Deployment.
+# This pipeline is designed to automate the deployment of notebooks and jobs to Databricks using the Databricks CLI.
+# Steps include setting up the environment, validating the build, and deploying the assets to Databricks.
+trigger:
+  branches:
+    include:  
+      - dev
+      - stage
+      - main
+
+# This pipeline is also triggered for pull requests made against the specified branches
+pr:
+  branches:
+    include:
+      - dev
+      - stage
+      - main
+
+# Defines the agent pool where the jobs will run
+pool:
+  name: aci-es-agents
+
+# on PullRequest only validating, on Merge validating an deployinh
+variables:
+- name: displayNameValue
+  ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+    value: 'Validating'
+  ${{ if ne(variables['Build.Reason'], 'PullRequest') }}:
+    value: 'Validating and Deploying into $(Build.SourceBranchName)'
+
+jobs:
+  - job: deploy_databricks_workflow
+    steps:
+    # Fetch the secret from Azure Key Vault for the DEV branch
+    - task: AzureKeyVault@1
+      inputs:
+        azureSubscription: 'SPN-sub-lz-datacust-anwo-prod-01'
+        keyVaultName: 'kv-anwocus-prod-uks-01' #### that have to be variable
+        secretsFilter: 'ARM-CLIENT-SECRET'
+      condition: or(eq(variables['Build.SourceBranchName'], 'dev'), eq(variables['system.pullRequest.targetBranch'], 'dev'))
+      
+    # Fetch the secret from Azure Key Vault for the STAGE branch
+    - task: AzureKeyVault@1
+      inputs:
+        azureSubscription: 'SPN-sub-lz-datacust-stag-01'
+        keyVaultName: 'kv-dtcus-stag-uks-01'
+        secretsFilter: 'ARM-CLIENT-SECRET'
+      condition: or(eq(variables['Build.SourceBranchName'], 'stage'), eq(variables['system.pullRequest.targetBranch'], 'stage'))
+
+    # Fetch the secret from Azure Key Vault for the PROD branch
+    - task: AzureKeyVault@1
+      inputs:
+        azureSubscription: 'SPN-sub-lz-datacust-prod-01'
+        keyVaultName: 'kv-dtcus-prod-uks-01'
+        secretsFilter: 'ARM-CLIENT-SECRET'
+      condition: or(eq(variables['Build.SourceBranchName'], 'main'), eq(variables['system.pullRequest.targetBranch'], 'main'))
+
+    # Download the Databricks CLI package from Azure DevOps Artifacts repo 'databricks-pipelines' / https://dev.azure.com/asda-ccoe/AsdaUK-DataCust/_artifacts/feed/databricks-pipelines
+    - task: UniversalPackages@0
+      inputs: 
+        command: 'download'
+        downloadDirectory: '$(System.DefaultWorkingDirectory)/databricksBinary'
+        vstsFeed: 'AsdaUK-DataCust/databricks-pipelines'
+        vstsFeedPackage: 'databricks_cli'
+        vstsPackageVersion: '*'
+        displayName: 'Downloading databricks CLI'
+
+    # Main script to validate and deploy to Databricks based on branch or pull request
+    - script: |
+        set -e # Ensure the script exits immediately if any command fails.
+        set -x # Debugging
+        set -o pipefail
+
+        # Function to set up environment variables and make the Databricks binary executable
+        setup_environment() {
+          chmod +x $(System.DefaultWorkingDirectory)/databricksBinary/databricks
+          export PATH=$PATH:$(System.DefaultWorkingDirectory)/databricksBinary
+          export ARM_CLIENT_SECRET=$(ARM-CLIENT-SECRET)
+
+          if [ "$(Build.Reason)" == "PullRequest" ]; then
+            # Extract target branch name for pull requests
+            BRANCH_NAME=$(System.PullRequest.TargetBranch)
+          else
+            # Use source branch name for direct commits/merges
+            BRANCH_NAME=$(Build.SourceBranchName)
+          fi
+          echo "branch name $BRANCH_NAME"
+          if [ "$BRANCH_NAME" == "main" ]; then 
+            SUFFIX="prod"
+          else
+            SUFFIX=$BRANCH_NAME  
+          fi
+          export BUNDLE_VAR_suffix=-$SUFFIX
+        }
+
+        # Function to validate the Databricks bundle
+        databricks_validate() {
+          databricks bundle validate --target $SUFFIX --log-level info || exit 1
+        }
+
+        # Function to deploy the Databricks bundle
+        databricks_deploy() {
+          databricks bundle deploy --target $SUFFIX --log-level info || exit 1
+        }
+
+        # Function to deploy the Databricks DDLs (create, alter statments)
+        databricks_deploy_ddl() {
+          databricks bundle run foundations_v1_job_deploy_ddl --target $SUFFIX --log-level info || exit 1
+        }
+        setup_environment
+        databricks_validate
+
+        
+        if [ "$(Build.Reason)" != "PullRequest" ]; then
+          # Only deploy if the pipeline was triggered by a merge (accept pull request), not opening a pull request
+          databricks_deploy
+          databricks_deploy_ddl
+        else
+          # Only trigger if the pipeline was triggered by pull request
+          echo "Validation only when you open pull request."
+          exit 0
+        fi
+
+      displayName: $(displayNameValue)
+
+  - ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+    - deployment: DeployToProd
+      environment: prod
+      condition: succeeded()
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - script: echo "Deploying to Production environment. Approval required."

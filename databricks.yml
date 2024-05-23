@@ -1,0 +1,161 @@
+# Databricks Bundle Configuration.
+# This configuration file provides an overview of the Databricks environment, workspace settings, and associated resources.
+# The bundle consolidates various Databricks entities such as jobs, notebooks, and clusters for deployment and management.
+
+bundle:
+  # The name assigned to this Databricks bundle. It should be unique to distinguish it from other projects/bundles.
+  name: foundations_v1
+
+  # This section references additional YAML files that contain configurations for specific Databricks resources (e.g., jobs).
+  # By including other YAML files, the bundle can be modularized and organized for clarity.
+include:
+  - "./jobs/foundations_v1_job_deploy_ddl.yml"
+  - "./jobs/foundations_v1_job_monitoring.yml"
+  - "./jobs/foundations_v1_job_ghs_shortfall_voucher.yml"
+  - "./jobs/foundations_v1_job_summary_activity_notebooks.yml"
+  - "./jobs/foundations_v1_job_earn_on_fuel.yml"
+  - "./jobs/foundations_v1_job_ghs_participation.yml"
+  - "./jobs/foundations_v1_job_store_rewards_master_control.yml"
+  - "./jobs/foundations_v1_job_opt_in_figures_airship.yml"
+  - "./jobs/foundations_v1_job_google_api.yml"
+  - "./jobs/foundations_v1_job_data_quality_master.yml"
+  - "./jobs/foundations_v1_job_crm_send_level_engine.yml"
+  - "./jobs/foundations_v1_job_crm_send_level_engine_store.yml"
+  - "./jobs/foundations_v1_job_key_objectives.yml"
+  - "./jobs/foundations_v1_job_crm_monthly_ghs.yml"
+  - "./jobs/foundations_v1_job_crm_monthly_george.yml"
+  - "./jobs/foundations_v1_job_crm_send_level_rewards_george.yml"
+
+variables:
+  # Define default values for various variables used in the bundle.
+  # These variables can be parameters for notebooks, configuration settings, and other customizable values.
+
+  notebook_param_json:
+    # An example variable passed as JSON to a notebook.
+    description: "JSON formatted parameters passed to the first notebook."
+    default: '[{"catalog": "custanwo"}]'
+
+  catalog:
+    # An example variable passed as a simple string to notebooks.
+    description: "String parameter passed to some notebooks."
+    default: "custanwo"
+
+  schema:
+    # An example variable passed as a simple string to notebooks.
+    description: "String parameter passed to some notebooks."
+    default: "bi_data_model"
+
+  external_volume_location_name:
+    # To create external volume the external location name is required to select. This can be looked at from the list appears when you try to create external volume from databricks interface
+    description: "To create external volume the external location name is required to select."
+    default: "uc_pidtcusanwo_prod"
+
+  external_volume_location_path:
+    # When creating external volume both external location and external location path to the storage account is required
+    description: "When creating external volume both external location and external location path to the storage account is required."
+    default: "abfss://business@saaspidtcusanwoproduks01.dfs.core.windows.net"
+
+  suffix:
+    # A suffix added to all job and bundle names to differentiate environments (e.g., dev, prod).
+    description: "Suffix added bundle names, variable is passed from the Azure pipeline."
+    default: "_manual"
+
+  prefix:
+    # A suffix added to all job and bundle names to differentiate environments (e.g., dev, prod).
+    description: "Prefix added to job names, variable is passed from the Azure pipeline."
+    default: "manual_"
+
+  cron_status:
+    # Default state of the cron scheduler. This can be 'PAUSED' to save resources or 'UNPAUSED' for active schedules.
+    description: "Cron scheduler status. By default, cron is paused to save resources, except in production."
+    default: "PAUSED"
+
+  cron_expr:
+    description: "Cron syntax. In Anwo we run tasks once per week. In production every night."
+    default: "4 30 2 * * ?"
+
+  secret_scope:
+    # In databricks we need to access Azure Key Vault through secret scope.
+    description: "Databricks secret scope name."
+    default: "kv-anwocus-prod-uks-01" # default secret scope for Anwo
+
+  email_team_notification:
+    # email address for MS Teams to send notifications (right click on MS Teams to get info)
+    description: "Email address."
+    default: "68b2c6b0.asda.uk@uk.teams.ms"
+
+  email_mailbox_notification:
+    # email address for shared mail box to send notifications
+    description: "Email address."
+    default: "foundations-reply@asda.uk"
+
+  pbi_spn_client_id:
+    #Client ID of PBI service principle for refreshing reports.
+    description: "Client ID for Power BI service principle"
+    default: "bbde5d4d-b058-44ed-9a03-121449da47d7"
+
+  pbi_spn_tenant_id:
+    #tenant ID for power BI service principle
+    description: "Tenant ID for Power BI service principle"
+    default: "c8f73ab6-9d96-4a57-8b91-d22c63acec71"
+
+# Configuration details for the Databricks workspace.
+workspace:
+  azure_tenant_id: c8f73ab6-9d96-4a57-8b91-d22c63acec71 # Azure Tenant ID associated with this Databricks workspace.
+
+targets:
+  # Define configurations for different targets pointing to environments like development (dev), staging (stage), and production (prod).
+  # Each environment can have its own Databricks workspace, authentication details, and specific variable values.
+
+  manual:
+    # test deployments executed not through CI/CD pipeline. Target is pointing to Anwo environemnt.
+    default: true
+    workspace:
+      host: https://adb-4827527652115658.18.azuredatabricks.net # dbr-anwo-cus-prod-uks-01 workspace URL for the development environment.
+      profile: DEFAULT # for test manual deployments from AVD - DEFAULT config is taken from .databrickscfg
+      auth_type: pat # personal access token - follow manual how to configure it from executables_amd54 folder
+      state_path: /Shared/terraform_bundle_state/foundations_v1/manual
+      root_path: /Shared/bundle_files/foundations_v1/${workspace.current_user.userName}_manual
+
+  dev:
+    # Development environment settings. Target is pointing to Anwo environemnt.
+    workspace:
+      host: https://adb-4827527652115658.18.azuredatabricks.net # dbr-anwo-cus-prod-uks-01 workspace URL for the development environment.
+      azure_client_id: 3ab3a0cd-b1a4-4dab-9167-74acfa6eceb4 # Azure Client ID for authentication in the development environment.
+      state_path: /Shared/terraform_bundle_state/foundations_v1/dev
+      root_path: /Shared/bundle_files/foundations_v1/dev
+    variables:
+      cron_status: "UNPAUSED"
+
+  stage:
+    # Staging environment settings. Target is pointing to stage environemnt.
+    workspace:
+      host: https://adb-1522136877496798.18.azuredatabricks.net # dbr-dtcus-stag-uks-02 workspace URL for the staging environment.
+      azure_client_id: 2ff1586c-dc27-471d-9076-52dbd11d15cc # Azure Client ID for authentication in the staging environment.
+      state_path: /Shared/terraform_bundle_state/foundations_v1/stage
+      root_path: /Shared/bundle_files/foundations_v1/stage
+    variables:
+      secret_scope: "kv-dtcus-stag-uks-01"
+      pbi_spn_client_id: "a0cdfeec-af42-469d-b021-55832dda6d47" # PBI SPN client ID for refreshing reports using API
+      catalog: "custstag"
+      email_team_notification: "e85e0a01.asda.uk@uk.teams.ms"
+      cron_status: "UNPAUSED"
+      external_volume_location_name: "uc_pidtcus_stag"
+      external_volume_location_path: "abfss://business@saaspidtcusstaguks01.dfs.core.windows.net"
+
+  prod:
+    # Production environment settings. Target is pointing to prod environemnt.
+    workspace:
+      host: https://adb-3788983401740195.15.azuredatabricks.net # dbr-dtcus-prod-uks-02 workspace URL for the production environment.
+      azure_client_id: bc1bb123-9d71-4012-a03e-ad3464b33062 # Azure Client ID for authentication in the production environment.
+      state_path: /Shared/terraform_bundle_state/foundations_v1/
+      root_path: /Shared/bundle_files/foundations_v1/prod
+    variables:
+      # Override the default cron_status for the production environment to keep cron schedules active.
+      cron_status: "UNPAUSED"
+      secret_scope: "kv-dtcus-prod-uks-01"
+      pbi_spn_client_id: "aa4aebd0-2ab5-4779-b87e-33ec54e8ea2c"
+      catalog: "custprod"
+      email_team_notification: "f25687b7.asda.uk@uk.teams.ms"
+      external_volume_location_name: "uc_pidtcus_prod"
+      external_volume_location_path: "abfss://business@saaspidtcusproduks01.dfs.core.windows.net"
